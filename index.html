@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Днюхи укр фурри комьюнити ☺️</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0f19;
+            color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col p-4 md:p-8">
+    <div class="max-w-xl w-full mx-auto">
+        <header class="flex justify-between items-start mb-6">
+            <div>
+                <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+                    Днюхи укр фурри комьюнити ☺️
+                </h1>
+                <p class="text-sm text-gray-400 mt-1">Ближайшие дни рождения</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="admin-btn" onclick="openAdminModal()" class="hidden bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors shadow-sm">
+                    Админка
+                </button>
+                <button onclick="loadBirthdays()" class="bg-gray-800 hover:bg-gray-700 text-gray-300 p-2 rounded-lg transition-colors border border-gray-700">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <main class="space-y-6">
+            <section>
+                <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Ближайшие</h2>
+                <div id="birthdays-container" class="space-y-3">
+                    <div class="text-center py-12 text-gray-500 text-sm">Загрузка...</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="admin-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-white">Управление днями рождения</h3>
+                <button onclick="closeAdminModal()" class="text-gray-400 hover:text-white text-xl font-bold">&times;</button>
+            </div>
+            <form id="birthday-form" onsubmit="saveBirthday(event)" class="space-y-4">
+                <input type="hidden" id="edit-id">
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Telegram ID пользователя</label>
+                    <input type="text" id="tg-id" placeholder="Например: 123456789" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Username в ТГ (без @)</label>
+                    <input type="text" id="profile-url" placeholder="username" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Имя *</label>
+                    <input type="text" id="display-name" placeholder="Например: Мурзик" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Ссылка на аватарку (опционально)</label>
+                    <input type="url" id="avatar-url" placeholder="https://..." class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Дата рождения</label>
+                    <input type="date" id="birth-date" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
+                </div>
+                <div class="flex gap-3 pt-2">
+                    <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 rounded-lg text-sm transition-colors">Сохранить</button>
+                    <button type="button" onclick="resetForm()" class="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm transition-colors">Очистить</button>
+                </div>
+            </form>
+            <div class="mt-6 border-t border-gray-800 pt-4 max-h-48 overflow-y-auto space-y-2" id="admin-list">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://cvnveysfjogavhrfnkoa.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_ljOUoM7yemy8-JZbPzr9yA_QOGpL0xy';
+
+        // 👇 URL твоего бэкенда (например, https://your-app.up.railway.app)
+        const BACKEND_URL = '';
+
+        let supabaseClient = null;
+        try {
+            if (window.supabase && SUPABASE_URL !== 'ТУТ_ТВОЙ_SUPABASE_URL') {
+                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            }
+        } catch (e) {
+            console.error('Supabase init error:', e);
+        }
+
+        const ADMIN_TG_ID = 8519900127;
+
+        let tg = window.Telegram?.WebApp;
+        if (tg) {
+            try { tg.expand(); } catch(e) {}
+        }
+
+        let currentUserId = tg?.initDataUnsafe?.user?.id;
+        let currentUser = tg?.initDataUnsafe?.user;
+        const isInTelegram = !!currentUser?.id;
+
+        function checkAdminAccess() {
+            if (currentUserId === ADMIN_TG_ID) {
+                document.getElementById('admin-btn').classList.remove('hidden');
+            }
+        }
+        checkAdminAccess();
+
+        function getKyivCurrentDate() {
+            try {
+                const now = new Date();
+                const kyivDateStr = now.toLocaleString("en-US", { timeZone: "Europe/Kyiv" });
+                return new Date(kyivDateStr);
+            } catch (e) {
+                return new Date();
+            }
+        }
+
+        function calculateDaysLeft(birthDateStr) {
+            const today = getKyivCurrentDate();
+            today.setHours(0, 0, 0, 0);
+
+            const parts = birthDateStr.split('-');
+            if (parts.length !== 3) return 0;
+            const month = parseInt(parts[1], 10);
+            const day = parseInt(parts[2], 10);
+
+            let nextBday = new Date(today.getFullYear(), month - 1, day);
+            nextBday.setHours(0, 0, 0, 0);
+
+            if (nextBday < today) {
+                nextBday.setFullYear(today.getFullYear() + 1);
+            }
+
+            const diffTime = nextBday - today;
+            return Math.round(diffTime / (1000 * 60 * 60 * 24));
+        }
+
+        function formatDaysWord(days) {
+            if (days === 0) return 'Сегодня 🎉';
+            if (days === 1) return 'Через 1 день';
+
+            const rem10 = days % 10;
+            const rem100 = days % 100;
+
+            if (rem100 >= 11 && rem100 <= 19) return `Через ${days} дней`;
+            if (rem10 === 1) return `Через ${days} день`;
+            if (rem10 >= 2 && rem10 <= 4) return `Через ${days} дня`;
+            return `Через ${days} дней`;
+        }
+
+        function formatDateReadable(birthDateStr) {
+            const parts = birthDateStr.split('-');
+            if (parts.length !== 3) return birthDateStr;
+            const month = parseInt(parts[1], 10);
+            const day = parseInt(parts[2], 10);
+            const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+            return `${day} ${months[month - 1] || ''}`;
+        }
+
+        function getInitialAvatar(name) {
+            const letter = (name || 'FX').trim().charAt(0).toUpperCase() || 'FX';
+            return `https://placehold.co/100x100/1f2937/9ca3af?text=${encodeURIComponent(letter)}`;
+        }
+
+        /**
+         * Синхронизирует данные текущего пользователя из Telegram в Supabase.
+         * Вызывается только когда мы внутри Mini App.
+         */
+        async function syncMeFromTelegram() {
+            if (!isInTelegram || !supabaseClient) return;
+
+            const tgId = String(currentUser.id);
+            const freshName = [currentUser.first_name, currentUser.last_name]
+                .filter(Boolean).join(' ').trim();
+            const freshUsername = currentUser.username || null;
+
+            const { data, error } = await supabaseClient
+                .from('birthdays')
+                .select('id, display_name, profile_url, avatar_url')
+                .eq('tg_id', tgId)
+                .maybeSingle();
+
+            if (error || !data) return; // нет записи — не наша забота
+
+            const patch = {};
+            if (freshName && data.display_name !== freshName) patch.display_name = freshName;
+            if (freshUsername && data.profile_url !== freshUsername) patch.profile_url = freshUsername;
+
+            // Пытаемся получить актуальную аву через бэкенд (если он настроен)
+            if (BACKEND_URL) {
+                try {
+                    const res = await fetch(`${BACKEND_URL}/avatar/${tgId}`);
+                    if (res.ok) {
+                        const { url } = await res.json();
+                        if (url && data.avatar_url !== url) patch.avatar_url = url;
+                    }
+                } catch (e) {
+                    // бэкенд недоступен — не критично
+                }
+            }
+
+            if (Object.keys(patch).length) {
+                await supabaseClient.from('birthdays').update(patch).eq('id', data.id);
+            }
+        }
+
+        async function loadBirthdays() {
+            const container = document.getElementById('birthdays-container');
+            container.innerHTML = '<div class="text-center py-12 text-gray-500 text-sm">Загрузка...</div>';
+
+            if (!supabaseClient) {
+                container.innerHTML = '<div class="text-center py-12 text-yellow-500 text-sm">Пожалуйста, укажите ваши данные Supabase в коде сайта!</div>';
+                return;
+            }
+
+            const { data, error } = await supabaseClient.from('birthdays').select('*');
+
+            if (error) {
+                container.innerHTML = '<div class="text-center py-12 text-red-400 text-sm">Ошибка загрузки данных из базы данных</div>';
+                return;
+            }
+
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="text-center py-12 text-gray-500 text-sm">Дни рождения пока не добавлены</div>';
+                return;
+            }
+
+            const processed = data.map(item => ({
+                ...item,
+                daysLeft: calculateDaysLeft(item.birth_date)
+            }));
+
+            processed.sort((a, b) => a.daysLeft - b.daysLeft);
+
+            // Публичный список: скрываем безымянные записи
+            const visible = processed.filter(item => item.display_name && item.display_name.trim());
+
+            container.innerHTML = '';
+            if (visible.length === 0) {
+                container.innerHTML = '<div class="text-center py-12 text-gray-500 text-sm">Пока никого нет</div>';
+            }
+
+            visible.forEach(item => {
+                let profileLink = item.profile_url || '';
+                if (profileLink && !profileLink.startsWith('http')) {
+                    profileLink = `https://t.me/${profileLink.replace('@', '')}`;
+                }
+
+                const displayName = item.display_name;
+                const avatarUrl = item.avatar_url || getInitialAvatar(displayName);
+
+                const linkOpen = profileLink ? `<a href="${profileLink}" target="_blank" class="font-semibold text-white hover:text-blue-400 transition-colors text-sm md:text-base">${displayName}</a>` : `<span class="font-semibold text-white text-sm md:text-base">${displayName}</span>`;
+                const usernameLine = item.profile_url ? `@${item.profile_url.replace('@', '')} • ` : '';
+
+                const card = document.createElement('div');
+                card.className = 'bg-gray-900/60 border border-gray-800/80 rounded-xl p-3 flex items-center justify-between shadow-sm';
+                card.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <img src="${avatarUrl}" alt="${displayName}" class="w-11 h-11 rounded-full object-cover bg-gray-800" onerror="this.src='${getInitialAvatar(displayName)}'">
+                        <div>
+                            ${linkOpen}
+                            <div class="text-xs text-gray-400 mt-0.5">${usernameLine}${formatDateReadable(item.birth_date)}</div>
+                        </div>
+                    </div>
+                    <div class="text-xs md:text-sm font-medium ${item.daysLeft === 0 ? 'text-blue-400 bg-blue-950/40 px-2.5 py-1 rounded-full border border-blue-900/50' : 'text-gray-400'}">
+                        ${formatDaysWord(item.daysLeft)}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+
+            if (!document.getElementById('admin-btn').classList.contains('hidden')) {
+                renderAdminList(processed);
+            }
+        }
+
+        function openAdminModal() {
+            const modal = document.getElementById('admin-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            prefillFromTelegram();
+            loadBirthdays();
+        }
+
+        function closeAdminModal() {
+            const modal = document.getElementById('admin-modal');
+            modal.classList.remove('flex');
+            modal.classList.add('hidden');
+            loadBirthdays();
+        }
+
+        function prefillFromTelegram() {
+            if (!isInTelegram) return;
+            const editId = document.getElementById('edit-id').value;
+            if (editId) return; // не трогаем форму при редактировании
+
+            const nameInput = document.getElementById('display-name');
+            const tgInput = document.getElementById('tg-id');
+            const userInput = document.getElementById('profile-url');
+
+            if (!nameInput.value) {
+                nameInput.value = [currentUser.first_name, currentUser.last_name]
+                    .filter(Boolean).join(' ').trim();
+            }
+            if (!tgInput.value) tgInput.value = currentUser.id;
+            if (!userInput.value && currentUser.username) userInput.value = currentUser.username;
+        }
+
+        function resetForm() {
+            document.getElementById('edit-id').value = '';
+            document.getElementById('birthday-form').reset();
+        }
+
+        function renderAdminList(items) {
+            const listContainer = document.getElementById('admin-list');
+            listContainer.innerHTML = '<h4 class="text-xs font-semibold text-gray-400 mb-2">Список записей:</h4>';
+            items.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-between bg-gray-800/40 p-2 rounded-lg text-sm mb-1';
+
+                const safeName = (item.display_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const safeProfile = (item.profile_url || '').replace(/'/g, "\\'");
+                const safeAvatar = (item.avatar_url || '').replace(/'/g, "\\'");
+                const safeTgId = item.tg_id || '';
+
+                row.innerHTML = `
+                    <span class="text-gray-300 truncate max-w-[150px]">${item.display_name || 'ID: ' + item.tg_id}</span>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="editItem('${item.id}', '${safeTgId}', '${safeName}', '${safeProfile}', '${safeAvatar}', '${item.birth_date}')" class="text-blue-400 hover:text-blue-300 text-xs">Изм.</button>
+                        <button type="button" onclick="deleteItem('${item.id}')" class="text-red-400 hover:text-red-300 text-xs">Удалить</button>
+                    </div>
+                `;
+                listContainer.appendChild(row);
+            });
+        }
+
+        function editItem(id, tgId, name, profile, avatar, date) {
+            document.getElementById('edit-id').value = id;
+            document.getElementById('tg-id').value = tgId;
+            document.getElementById('display-name').value = name;
+            document.getElementById('profile-url').value = profile;
+            document.getElementById('avatar-url').value = avatar && !avatar.includes('placehold.co') ? avatar : '';
+            document.getElementById('birth-date').value = date;
+        }
+
+        async function saveBirthday(event) {
+            event.preventDefault();
+            if (!supabaseClient) return;
+
+            const id = document.getElementById('edit-id').value;
+            const tg_id = document.getElementById('tg-id').value;
+            const display_name = document.getElementById('display-name').value.trim();
+            const profile_url = document.getElementById('profile-url').value.trim().replace('@', '');
+            const birth_date = document.getElementById('birth-date').value;
+            const manualAvatar = document.getElementById('avatar-url').value.trim();
+
+            if (!display_name) {
+                alert('Укажи имя — без него запись не сохранится');
+                return;
+            }
+
+            const avatar_url = manualAvatar || getInitialAvatar(display_name);
+
+            if (id) {
+                await supabaseClient.from('birthdays').update({ tg_id, display_name, profile_url, avatar_url, birth_date }).eq('id', id);
+            } else {
+                await supabaseClient.from('birthdays').insert([{ tg_id, display_name, profile_url, avatar_url, birth_date }]);
+            }
+
+            resetForm();
+            loadBirthdays();
+        }
+
+        async function deleteItem(id) {
+            if (!supabaseClient) return;
+            if (window.confirm && window.confirm('Точно удалить?')) {
+                await supabaseClient.from('birthdays').delete().eq('id', id);
+                loadBirthdays();
+            }
+        }
+
+        window.onload = async () => {
+            await syncMeFromTelegram();
+            await loadBirthdays();
+        };
+    </script>
+</body>
+</html>
