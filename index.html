@@ -64,8 +64,8 @@
                     <input type="text" id="profile-url" placeholder="username" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-400 mb-1">Имя *</label>
-                    <input type="text" id="display-name" placeholder="Например: Мурзик" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Имя</label>
+                    <input type="text" id="display-name" placeholder="Например: Мурзик" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-400 mb-1">Ссылка на аватарку (опционально)</label>
@@ -177,6 +177,17 @@
         }
 
         /**
+         * Возвращает отображаемое имя для записи.
+         * Приоритет: display_name -> @username -> ID: tg_id -> 'Без имени'
+         */
+        function getDisplayName(item) {
+            if (item.display_name && item.display_name.trim()) return item.display_name.trim();
+            if (item.profile_url && item.profile_url.trim()) return '@' + item.profile_url.replace('@', '').trim();
+            if (item.tg_id) return 'ID: ' + item.tg_id;
+            return 'Без имени';
+        }
+
+        /**
          * Синхронизирует данные текущего пользователя из Telegram в Supabase.
          * Вызывается только когда мы внутри Mini App.
          */
@@ -197,16 +208,20 @@
             if (error || !data) return; // нет записи — не наша забота
 
             const patch = {};
-            if (freshName && data.display_name !== freshName) patch.display_name = freshName;
+            // Имя обновляем только если оно у нас есть и в базе сейчас пусто
+            if (freshName && (!data.display_name || !data.display_name.trim())) {
+                patch.display_name = freshName;
+            }
             if (freshUsername && data.profile_url !== freshUsername) patch.profile_url = freshUsername;
 
-            // Пытаемся получить актуальную аву через бэкенд (если он настроен)
+            // Пытаемся получить актуальную аву и имя через бэкенд (если он настроен)
             if (BACKEND_URL) {
                 try {
                     const res = await fetch(`${BACKEND_URL}/avatar/${tgId}`);
                     if (res.ok) {
-                        const { url } = await res.json();
+                        const { url, name } = await res.json();
                         if (url && data.avatar_url !== url) patch.avatar_url = url;
+                        if (name && (!data.display_name || !data.display_name.trim())) patch.display_name = name;
                     }
                 } catch (e) {
                     // бэкенд недоступен — не критично
@@ -246,8 +261,11 @@
 
             processed.sort((a, b) => a.daysLeft - b.daysLeft);
 
-            // Публичный список: скрываем безымянные записи
-            const visible = processed.filter(item => item.display_name && item.display_name.trim());
+            // Показываем все записи, у которых есть хоть какое-то имя (display_name / username / tg_id)
+            const visible = processed.filter(item => {
+                const name = getDisplayName(item);
+                return name && name !== 'Без имени';
+            });
 
             container.innerHTML = '';
             if (visible.length === 0) {
@@ -260,7 +278,7 @@
                     profileLink = `https://t.me/${profileLink.replace('@', '')}`;
                 }
 
-                const displayName = item.display_name;
+                const displayName = getDisplayName(item);
                 const avatarUrl = item.avatar_url || getInitialAvatar(displayName);
 
                 const linkOpen = profileLink ? `<a href="${profileLink}" target="_blank" class="font-semibold text-white hover:text-blue-400 transition-colors text-sm md:text-base">${displayName}</a>` : `<span class="font-semibold text-white text-sm md:text-base">${displayName}</span>`;
@@ -332,13 +350,13 @@
                 const row = document.createElement('div');
                 row.className = 'flex items-center justify-between bg-gray-800/40 p-2 rounded-lg text-sm mb-1';
 
-                const safeName = (item.display_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const safeName = (getDisplayName(item) || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const safeProfile = (item.profile_url || '').replace(/'/g, "\\'");
                 const safeAvatar = (item.avatar_url || '').replace(/'/g, "\\'");
                 const safeTgId = item.tg_id || '';
 
                 row.innerHTML = `
-                    <span class="text-gray-300 truncate max-w-[150px]">${item.display_name || 'ID: ' + item.tg_id}</span>
+                    <span class="text-gray-300 truncate max-w-[150px]">${getDisplayName(item)}</span>
                     <div class="flex gap-2">
                         <button type="button" onclick="editItem('${item.id}', '${safeTgId}', '${safeName}', '${safeProfile}', '${safeAvatar}', '${item.birth_date}')" class="text-blue-400 hover:text-blue-300 text-xs">Изм.</button>
                         <button type="button" onclick="deleteItem('${item.id}')" class="text-red-400 hover:text-red-300 text-xs">Удалить</button>
@@ -368,17 +386,19 @@
             const birth_date = document.getElementById('birth-date').value;
             const manualAvatar = document.getElementById('avatar-url').value.trim();
 
-            if (!display_name) {
-                alert('Укажи имя — без него запись не сохранится');
-                return;
+            // Если имя не указано — подставляем username или tg_id, чтобы запись не была безымянной
+            let finalName = display_name;
+            if (!finalName) {
+                if (profile_url) finalName = '@' + profile_url;
+                else if (tg_id) finalName = 'ID: ' + tg_id;
             }
 
-            const avatar_url = manualAvatar || getInitialAvatar(display_name);
+            const avatar_url = manualAvatar || getInitialAvatar(finalName);
 
             if (id) {
-                await supabaseClient.from('birthdays').update({ tg_id, display_name, profile_url, avatar_url, birth_date }).eq('id', id);
+                await supabaseClient.from('birthdays').update({ tg_id, display_name: display_name || null, profile_url, avatar_url, birth_date }).eq('id', id);
             } else {
-                await supabaseClient.from('birthdays').insert([{ tg_id, display_name, profile_url, avatar_url, birth_date }]);
+                await supabaseClient.from('birthdays').insert([{ tg_id, display_name: display_name || null, profile_url, avatar_url, birth_date }]);
             }
 
             resetForm();
